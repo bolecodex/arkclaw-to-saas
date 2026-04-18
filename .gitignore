@@ -1,0 +1,25 @@
+# Dependencies & environments
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Secrets
+.env
+*.key
+
+# Internal docs (not for public repo)
+docs/
+
+# Cursor
+.cursor/
+assets/
