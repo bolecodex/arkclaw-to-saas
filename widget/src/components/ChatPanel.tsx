@@ -15,6 +15,7 @@ import { QuickActions } from './QuickActions';
 import { SelectionToolbar } from './SelectionToolbar';
 import { LoginPrompt } from './LoginPrompt';
 import { InstancePicker } from './InstancePicker';
+import { ActionLogPanel } from './ActionLogPanel';
 
 const INSTANCE_LS_KEY = 'arkclaw:selected-instance-id';
 
@@ -32,6 +33,8 @@ export function ChatPanel({ config }: ChatPanelProps) {
   const pendingContext = useChatStore((s) => s.pendingContext);
   const hostInfo = useChatStore((s) => s.hostInfo);
   const setHostInfo = useChatStore((s) => s.setHostInfo);
+  const pushActionLog = useChatStore((s) => s.pushActionLog);
+  const resolveActionLog = useChatStore((s) => s.resolveActionLog);
   // 是否已经把宿主能力清单注入给 AI（每次对话只注入一次，避免每条消息都重复刷一大段提示）
   const hostInfoSentRef = useRef(false);
 
@@ -169,6 +172,14 @@ export function ChatPanel({ config }: ChatPanelProps) {
       try { fn('[Arkclaw][ws]', msg, data ?? ''); } catch { /* noop */ }
     },
     onAiAction: (callId, action, args) => {
+      pushActionLog({
+        id: callId,
+        callId,
+        action,
+        args,
+        status: 'pending',
+        ts: Date.now(),
+      });
       bridge.send({ type: 'AI_ACTION', callId, action, args });
     },
     onAssistantText: (text) => {
@@ -268,6 +279,12 @@ export function ChatPanel({ config }: ChatPanelProps) {
         }
         break;
       case 'ACTION_RESULT':
+        // 标记日志状态（让用户在抽屉里看到 ✓ / ✗）
+        resolveActionLog(msg.callId, {
+          status: msg.ok ? 'ok' : 'error',
+          result: msg.result,
+          error: msg.error,
+        });
         // 把 action 结果作为系统消息再发回 AI
         ws.send(
           `[宿主动作结果] callId=${msg.callId} ok=${msg.ok}` +
@@ -277,7 +294,7 @@ export function ChatPanel({ config }: ChatPanelProps) {
         );
         break;
     }
-  }, [open, sendUser, setOpen, setPendingContext, setHostInfo, ws]);
+  }, [open, sendUser, setOpen, setPendingContext, setHostInfo, resolveActionLog, ws]);
 
   const themedRoot = useMemo(() => (
     <div className="ac-panel ac-root" data-theme={ui.theme || 'auto'}>
@@ -331,6 +348,8 @@ export function ChatPanel({ config }: ChatPanelProps) {
           {bootError}
         </div>
       )}
+
+      {!needLogin && <ActionLogPanel />}
 
       <InputBar onSend={sendUser} disabled={needLogin || !wsUrl || status === 'error'} />
 

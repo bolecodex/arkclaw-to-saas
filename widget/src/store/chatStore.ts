@@ -35,6 +35,19 @@ export interface Message {
   contextChip?: ContextElement;
 }
 
+/** AI 触发宿主动作的可视化记录，用户可以点开抽屉里的"动作日志"看 */
+export interface ActionLog {
+  id: string;
+  callId: string;
+  action: string;
+  args: Record<string, unknown>;
+  status: 'pending' | 'ok' | 'error';
+  result?: unknown;
+  error?: string;
+  ts: number;
+  resolvedAt?: number;
+}
+
 export interface ChatState {
   status: ConnectionStatus;
   open: boolean;
@@ -42,11 +55,15 @@ export interface ChatState {
   pendingContext: ContextElement | null;
   /** 宿主推送的能力清单 + 页面字段，sendUser 时拼到 system context 给 AI */
   hostInfo: HostInfo | null;
+  actionLogs: ActionLog[];
 
   setStatus: (status: ConnectionStatus) => void;
   setOpen: (open: boolean) => void;
   toggle: () => void;
   setHostInfo: (info: HostInfo | null) => void;
+  pushActionLog: (log: ActionLog) => void;
+  resolveActionLog: (callId: string, patch: Pick<ActionLog, 'status' | 'result' | 'error'>) => void;
+  clearActionLogs: () => void;
 
   addMessage: (msg: Message) => void;
   updateMessage: (id: string, patch: Partial<Message>) => void;
@@ -69,11 +86,20 @@ export const useChatStore = create<ChatState>((set) => ({
   messages: [],
   pendingContext: null,
   hostInfo: null,
+  actionLogs: [],
 
   setStatus: (status) => set({ status }),
   setOpen: (open) => set({ open }),
   toggle: () => set((s) => ({ open: !s.open })),
   setHostInfo: (info) => set({ hostInfo: info }),
+  pushActionLog: (log) => set((s) => ({ actionLogs: [...s.actionLogs, log].slice(-30) })),
+  resolveActionLog: (callId, patch) =>
+    set((s) => ({
+      actionLogs: s.actionLogs.map((l) =>
+        l.callId === callId ? { ...l, ...patch, resolvedAt: Date.now() } : l
+      ),
+    })),
+  clearActionLogs: () => set({ actionLogs: [] }),
 
   addMessage: (msg) => set((s) => ({ messages: [...s.messages, msg] })),
 
@@ -126,7 +152,7 @@ export const useChatStore = create<ChatState>((set) => ({
     })),
 
   setPendingContext: (ctx) => set({ pendingContext: ctx }),
-  clear: () => set({ messages: [], pendingContext: null }),
+  clear: () => set({ messages: [], pendingContext: null, actionLogs: [] }),
 }));
 
 export const uuid = () =>
