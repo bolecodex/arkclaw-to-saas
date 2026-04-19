@@ -116,19 +116,44 @@
         },
         actions: {
           fillForm: ({ field, value }) => {
-            const el = document.querySelector(`[name="${field}"]`);
-            if (!el) return { ok: false, reason: 'field not found' };
-            el.value = value;
+            // 多种方式定位字段：name → id → selector
+            var el = document.querySelector('[name="' + CSS.escape(field) + '"]');
+            if (!el) el = document.getElementById(field);
+            if (!el && typeof field === 'string' && field.indexOf('#') === 0) {
+              try { el = document.querySelector(field); } catch (e) {}
+            }
+            if (!el) return { ok: false, reason: 'field not found: ' + field };
+
+            el.focus();
+            // input/textarea/select 都用 value 赋值；如果是 select 需要找到匹配 value 的 option
+            if (el.tagName === 'SELECT') {
+              var opt = Array.prototype.find.call(el.options, function(o){
+                return o.value === String(value) || o.textContent.trim() === String(value);
+              });
+              if (opt) el.value = opt.value;
+              else el.value = value;
+            } else if (el.type === 'checkbox' || el.type === 'radio') {
+              el.checked = !!value;
+            } else {
+              el.value = value;
+            }
+            // 同时派发 input 和 change，覆盖普通 DOM 控件 + React 受控组件 + 各种校验场景
             el.dispatchEvent(new Event('input', { bubbles: true }));
-            return { ok: true };
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            el.blur();
+            window.Arkclaw && window.Arkclaw.highlightSelector && window.Arkclaw.highlightSelector(
+              el.id ? '#' + el.id : '[name="' + el.name + '"]', 1500
+            );
+            return { ok: true, value: el.value };
           },
           clickButton: ({ selector }) => {
-            const el = document.querySelector(selector);
-            el?.click();
-            return { ok: !!el };
+            var el = null;
+            try { el = document.querySelector(selector); } catch (e) {}
+            if (!el) return { ok: false, reason: 'button not found: ' + selector };
+            el.click();
+            return { ok: true };
           },
           highlight: ({ selector }) => {
-            // 也可以让 AI 显式触发高亮（默认 SDK 也会自动处理 HIGHLIGHT 消息）
             window.Arkclaw.highlightSelector(selector);
             return { ok: true };
           },

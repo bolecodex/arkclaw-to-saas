@@ -7,7 +7,8 @@ import { ApiClient, ApiError, type InstanceInfo } from '@/api/client';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { useHostBridge } from '@/hooks/useHostBridge';
 import { useChatStore, uuid, type Message } from '@/store/chatStore';
-import type { ArkclawOptions, BridgeFromHost, QuickAction } from '@/sdk/types';
+import type { ArkclawOptions, BridgeFromHost, HostInfo, QuickAction } from '@/sdk/types';
+import { buildHostCapabilityPrompt } from '@/utils/hostPrompt';
 import { MessageList } from './MessageList';
 import { InputBar } from './InputBar';
 import { QuickActions } from './QuickActions';
@@ -29,6 +30,10 @@ export function ChatPanel({ config }: ChatPanelProps) {
   const addMessage = useChatStore((s) => s.addMessage);
   const setPendingContext = useChatStore((s) => s.setPendingContext);
   const pendingContext = useChatStore((s) => s.pendingContext);
+  const hostInfo = useChatStore((s) => s.hostInfo);
+  const setHostInfo = useChatStore((s) => s.setHostInfo);
+  // 是否已经把宿主能力清单注入给 AI（每次对话只注入一次，避免每条消息都重复刷一大段提示）
+  const hostInfoSentRef = useRef(false);
 
   const [wsUrl, setWsUrl] = useState<string | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
@@ -190,7 +195,7 @@ export function ChatPanel({ config }: ChatPanelProps) {
   );
 
   const sendUser = useCallback(
-    (text: string, opts?: { isContextOnly?: boolean }) => {
+    (text: string, _opts?: { isContextOnly?: boolean }) => {
       if (!text.trim()) return;
       const m: Message = {
         id: uuid(),
@@ -202,17 +207,30 @@ export function ChatPanel({ config }: ChatPanelProps) {
       addMessage(m);
       bridge.send({ type: 'MESSAGE', role: 'user', text });
 
-      const contextStr = pendingContext
-        ? `[页面上下文]\n标签: ${pendingContext.tagName}` +
-          (pendingContext.text ? `\n内容: ${pendingContext.text}` : '') +
-          (pendingContext.selector ? `\nselector: ${pendingContext.selector}` : '')
-        : undefined;
+      const contextParts: string[] = [];
+
+      // 第一次说话时把宿主能力清单注入：让 AI 知道有哪些字段、哪些 action、调用格式
+      if (!hostInfoSentRef.current && hostInfo) {
+        const cap = buildHostCapabilityPrompt(hostInfo);
+        if (cap) contextParts.push(cap);
+        hostInfoSentRef.current = true;
+      }
+
+      if (pendingContext) {
+        contextParts.push(
+          `[页面上下文]\n标签: ${pendingContext.tagName}` +
+            (pendingContext.text ? `\n内容: ${pendingContext.text}` : '') +
+            (pendingContext.selector ? `\nselector: ${pendingContext.selector}` : '')
+        );
+      }
+
+      const contextStr = contextParts.length ? contextParts.join('\n\n') : undefined;
       // deliver=false 才会触发 AI 回复（demo 验证过）；
       // deliver=true 是把消息直接投递给会话端，不进入 agent 推理
       ws.send(text, { context: contextStr, deliver: false });
       setPendingContext(null);
     },
-    [addMessage, bridge, pendingContext, setPendingContext, ws]
+    [addMessage, bridge, pendingContext, setPendingContext, ws, hostInfo]
   );
 
   const onQuickAction = useCallback((a: QuickAction) => sendUser(a.prompt), [sendUser]);
@@ -227,6 +245,12 @@ export function ChatPanel({ config }: ChatPanelProps) {
         setOpen(!open); break;
       case 'SEND':
         sendUser(msg.text); break;
+      case 'HOST_INFO':
+        // 宿主推送了能力 / 字段清单 → 存到 store；下次 sendUser 时会注入到 AI 上下文
+        setHostInfo(msg.info as HostInfo);
+        // 字段或 actions 发生显著变化时（比如切了路由），允许重新注入一次
+        hostInfoSentRef.current = false;
+        break;
       case 'HOST_CONTEXT':
         // 只在有具体元素或 selection 时入栈，避免噪音
         if (msg.element || msg.selection) {
@@ -247,7 +271,7 @@ export function ChatPanel({ config }: ChatPanelProps) {
         );
         break;
     }
-  }, [open, sendUser, setOpen, setPendingContext, ws]);
+  }, [open, sendUser, setOpen, setPendingContext, setHostInfo, ws]);
 
   const themedRoot = useMemo(() => (
     <div className="ac-panel ac-root" data-theme={ui.theme || 'auto'}>

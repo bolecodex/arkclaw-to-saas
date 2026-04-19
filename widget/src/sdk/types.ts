@@ -69,12 +69,40 @@ export interface ArkclawOptions {
 
 /* ── postMessage protocol ── */
 
+/** 宿主页面里能被 AI 引用的可填字段 */
+export interface HostField {
+  /** 在宿主用 querySelector 能拿到的稳定选择器 */
+  selector: string;
+  /** name 属性，AI 调 fillForm 时优先用这个 */
+  name?: string;
+  /** input/select/textarea/button 等 */
+  tagName: string;
+  /** input type=text/number/email 等 */
+  type?: string;
+  /** 关联的 label 文本（从 <label for=> 或父级 label 推出） */
+  label?: string;
+  /** placeholder */
+  placeholder?: string;
+  /** select 等控件的可选值 */
+  options?: Array<{ value: string; label: string }>;
+}
+
+export interface HostInfo {
+  pageTitle: string;
+  pageUrl: string;
+  /** 宿主已注册的 action 名字（AI 可以调用） */
+  actions: string[];
+  /** 宿主页面上扫描到的可交互字段 */
+  fields: HostField[];
+}
+
 export type BridgeFromHost =
   | { type: 'OPEN' }
   | { type: 'CLOSE' }
   | { type: 'TOGGLE' }
   | { type: 'SEND'; text: string; meta?: Record<string, unknown> }
   | { type: 'HOST_CONTEXT'; trigger: 'click' | 'selection' | 'manual'; element?: ContextElement; selection?: string; extra?: Record<string, unknown> }
+  | { type: 'HOST_INFO'; info: HostInfo }
   | { type: 'ACTION_RESULT'; callId: string; ok: boolean; result?: unknown; error?: string }
   | { type: 'CONFIG_UPDATE'; ui?: UIOptions };
 

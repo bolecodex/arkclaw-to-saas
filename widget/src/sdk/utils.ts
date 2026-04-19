@@ -2,7 +2,7 @@
  * 工具函数：CSS selector 推断、元素信息提取等。
  */
 
-import type { ContextElement } from './types';
+import type { ContextElement, HostField } from './types';
 
 /** 给元素生成相对稳定的 CSS selector（id > data-testid > tag+nth-of-type 链）。 */
 export function inferSelector(el: Element, maxDepth = 5): string {
@@ -116,6 +116,80 @@ export function attachPageObserver(opts: PageObserverOpts): () => void {
     document.removeEventListener('click', onClick, true);
     document.removeEventListener('selectionchange', onSelectionChange);
   };
+}
+
+/* ── 宿主页面字段扫描 ── */
+
+/**
+ * 扫描宿主页面上的可交互字段（input/select/textarea/button）。
+ *
+ * 输出会作为 HOST_INFO 推给 widget，让 AI 知道：
+ *   - 有哪些字段（name/label/options），可以喊"填到 title"
+ *   - 有哪些按钮（label/data-testid），可以喊"点击提交"
+ */
+export function scanHostFields(blacklist?: string[]): HostField[] {
+  if (typeof document === 'undefined') return [];
+  const blacklistSel = blacklist?.join(',') || '';
+  const candidates = Array.from(
+    document.querySelectorAll('input, select, textarea, button, [role="button"]')
+  );
+  const out: HostField[] = [];
+  for (const el of candidates) {
+    if (el.closest('[data-arkclaw-widget]')) continue;
+    if (blacklistSel && el.closest(blacklistSel)) continue;
+    const tag = el.tagName.toLowerCase();
+    if (tag === 'input') {
+      const t = ((el as HTMLInputElement).type || 'text').toLowerCase();
+      // 跳过 hidden / submit-only 这种 LLM 不该填的
+      if (t === 'hidden' || t === 'submit' || t === 'reset') continue;
+    }
+    const f: HostField = {
+      tagName: tag,
+      selector: inferSelector(el),
+    };
+    const name = el.getAttribute('name');
+    if (name) f.name = name;
+    const type = el.getAttribute('type');
+    if (type) f.type = type;
+    const placeholder = el.getAttribute('placeholder');
+    if (placeholder) f.placeholder = placeholder;
+    const label = inferLabel(el);
+    if (label) f.label = label;
+    if (tag === 'select') {
+      const opts = Array.from((el as HTMLSelectElement).options).map((o) => ({
+        value: o.value,
+        label: (o.textContent || '').trim(),
+      }));
+      if (opts.length) f.options = opts;
+    }
+    if (tag === 'button' || el.getAttribute('role') === 'button') {
+      // button 没 label 时用文本
+      if (!f.label) f.label = (el.textContent || '').trim().slice(0, 60) || undefined;
+    }
+    out.push(f);
+  }
+  // 限制规模，避免页面字段太多撑爆 prompt
+  return out.slice(0, 80);
+}
+
+/** 从 <label for=> 或父级 label 反推字段名 */
+function inferLabel(el: Element): string | undefined {
+  const id = el.id;
+  if (id) {
+    const lbl = document.querySelector(`label[for="${CSS.escape(id)}"]`);
+    if (lbl) return (lbl.textContent || '').trim().slice(0, 60) || undefined;
+  }
+  const parentLabel = el.closest('label');
+  if (parentLabel) {
+    // 去掉子元素自己的文字
+    const cloned = parentLabel.cloneNode(true) as HTMLElement;
+    cloned.querySelectorAll('input, select, textarea, button').forEach((n) => n.remove());
+    return (cloned.textContent || '').trim().slice(0, 60) || undefined;
+  }
+  // 兜底：aria-label
+  const aria = el.getAttribute('aria-label');
+  if (aria) return aria.slice(0, 60);
+  return undefined;
 }
 
 /* ── 高亮注入 ── */

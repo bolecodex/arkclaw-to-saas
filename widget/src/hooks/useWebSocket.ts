@@ -88,19 +88,90 @@ function buildChatSend(text: string, deliver = false) {
   };
 }
 
-/* ── 工具调用解析 ── */
+/* ── 工具调用解析 ──
+ *
+ * 不同 LLM 输出格式不一样，这里都尝试解析，让宿主端能尽量执行 AI 的意图：
+ *  1. <arkclaw:action name="fillForm">{...}</arkclaw:action>  — 推荐，简单稳定
+ *  2. ```json {"action":"fillForm","args":{...}} ``` — markdown 代码块
+ *  3. ```action fillForm {...} ``` — 简化代码块
+ *  4. 纯 JSON 行：{"action":"fillForm","args":{...}}
+ */
 
-function tryParseAction(text: string): { action: string; args: Record<string, unknown> } | null {
-  // AI 通过 ```action``` 或 ```json action: {...}``` 等结构化输出请求宿主操作。
-  // 这里支持: <arkclaw:action name="x">{json}</arkclaw:action>
-  const m = text.match(/<arkclaw:action\s+name="([^"]+)"\s*>([\s\S]*?)<\/arkclaw:action>/);
-  if (!m) return null;
-  try {
-    const args = JSON.parse(m[2]);
-    return { action: m[1], args };
-  } catch {
-    return null;
+interface ParsedAction { action: string; args: Record<string, unknown> }
+
+const ACTION_TAG_RE = /<arkclaw:action\s+name=["']([^"']+)["']\s*>([\s\S]*?)<\/arkclaw:action>/g;
+const JSON_FENCE_RE = /```(?:json|action)?\s*\n([\s\S]*?)\n```/g;
+
+function tryParseActions(text: string): ParsedAction[] {
+  const out: ParsedAction[] = [];
+
+  // 1) <arkclaw:action> 标签
+  for (const m of text.matchAll(ACTION_TAG_RE)) {
+    try {
+      const args = JSON.parse(m[2].trim());
+      if (args && typeof args === 'object') out.push({ action: m[1], args });
+    } catch { /* skip 无效 JSON */ }
   }
+
+  // 2) markdown ```json``` 或 ```action``` 代码块
+  for (const m of text.matchAll(JSON_FENCE_RE)) {
+    const body = m[1].trim();
+    const parsed = tryParseJsonAction(body);
+    if (parsed) out.push(...parsed);
+  }
+
+  // 3) 没有任何代码块时，尝试整段文本里抠 JSON
+  if (out.length === 0) {
+    // 简单启发：找到第一个 { 到对应 } 的子串
+    const idx = text.indexOf('{');
+    if (idx >= 0) {
+      const candidate = text.slice(idx);
+      const parsed = tryParseJsonAction(candidate);
+      if (parsed) out.push(...parsed);
+    }
+  }
+
+  return out;
+}
+
+function tryParseJsonAction(raw: string): ParsedAction[] | null {
+  // 单个对象：{"action":"x","args":{...}} 或 {"name":"x","arguments":{...}}
+  // 数组：[ {...}, {...} ]
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); } catch {
+    // 容错：从开头到第一个匹配的 } 截一段再试
+    const trimmed = trimToBalancedJson(raw);
+    if (!trimmed) return null;
+    try { parsed = JSON.parse(trimmed); } catch { return null; }
+  }
+  const arr: unknown[] = Array.isArray(parsed) ? parsed : [parsed];
+  const out: ParsedAction[] = [];
+  for (const it of arr) {
+    if (!it || typeof it !== 'object') continue;
+    const o = it as Record<string, unknown>;
+    const action = (o.action as string) || (o.name as string) || (o.tool as string);
+    const args = (o.args as Record<string, unknown>) || (o.arguments as Record<string, unknown>) || (o.params as Record<string, unknown>) || {};
+    if (typeof action === 'string' && action) {
+      out.push({ action, args });
+    }
+  }
+  return out.length ? out : null;
+}
+
+function trimToBalancedJson(s: string): string | null {
+  let depth = 0;
+  let start = -1;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '{') {
+      if (start < 0) start = i;
+      depth += 1;
+    } else if (c === '}') {
+      depth -= 1;
+      if (depth === 0 && start >= 0) return s.slice(start, i + 1);
+    }
+  }
+  return null;
 }
 
 /* ── Hook ── */
@@ -229,10 +300,13 @@ export function useWebSocket(opts: UseWebSocketOpts) {
         }
       }
 
-      // 如果 AI 文本中含 <arkclaw:action> 标签，触发宿主动作
-      const actionTag = tryParseAction(chatText);
-      if (actionTag) {
-        opts.onAiAction?.(uuid(), actionTag.action, actionTag.args);
+      // 在 final 状态下解析 AI 文本里所有 action 调用并依次派发
+      // （streaming 中间态不解析，避免 JSON 还没输出完就误触发）
+      if (chatState === 'final' && chatText) {
+        const actions = tryParseActions(chatText);
+        for (const a of actions) {
+          opts.onAiAction?.(uuid(), a.action, a.args);
+        }
       }
 
       if (chatState === 'final') {

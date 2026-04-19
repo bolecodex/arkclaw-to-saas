@@ -3,7 +3,7 @@
  */
 
 import { create } from 'zustand';
-import type { ConnectionStatus, ContextElement } from '@/sdk/types';
+import type { ConnectionStatus, ContextElement, HostInfo } from '@/sdk/types';
 
 export type Role = 'user' | 'assistant' | 'system' | 'error';
 
@@ -40,10 +40,13 @@ export interface ChatState {
   open: boolean;
   messages: Message[];
   pendingContext: ContextElement | null;
+  /** 宿主推送的能力清单 + 页面字段，sendUser 时拼到 system context 给 AI */
+  hostInfo: HostInfo | null;
 
   setStatus: (status: ConnectionStatus) => void;
   setOpen: (open: boolean) => void;
   toggle: () => void;
+  setHostInfo: (info: HostInfo | null) => void;
 
   addMessage: (msg: Message) => void;
   updateMessage: (id: string, patch: Partial<Message>) => void;
@@ -65,10 +68,12 @@ export const useChatStore = create<ChatState>((set) => ({
   open: false,
   messages: [],
   pendingContext: null,
+  hostInfo: null,
 
   setStatus: (status) => set({ status }),
   setOpen: (open) => set({ open }),
   toggle: () => set((s) => ({ open: !s.open })),
+  setHostInfo: (info) => set({ hostInfo: info }),
 
   addMessage: (msg) => set((s) => ({ messages: [...s.messages, msg] })),
 

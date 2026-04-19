@@ -9,7 +9,7 @@
  */
 
 import { HostBridge } from './HostBridge';
-import { attachPageObserver, highlightSelector } from './utils';
+import { attachPageObserver, highlightSelector, scanHostFields } from './utils';
 import type {
   ActionHandler,
   ActionRegistry,
@@ -17,6 +17,7 @@ import type {
   BridgeFromWidget,
   EventMap,
   EventName,
+  HostInfo,
   QuickAction,
   UIOptions,
 } from './types';
@@ -174,10 +175,17 @@ export class Arkclaw {
 
   registerAction(name: string, handler: ActionHandler): void {
     this.actions[name] = handler;
+    this.pushHostInfo();
   }
 
   unregisterAction(name: string): void {
     delete this.actions[name];
+    this.pushHostInfo();
+  }
+
+  /** 宿主主动通知 widget 重新扫描页面字段（SPA 切路由后调） */
+  refreshHostInfo(): void {
+    this.pushHostInfo();
   }
 
   pushContext(opts: { trigger?: 'manual' | 'click' | 'selection'; element?: any; selection?: string; extra?: Record<string, unknown> } = {}) {
@@ -287,11 +295,32 @@ export class Arkclaw {
     });
   }
 
+  /** 扫描宿主页面的可交互字段，跟 actions 一起推给 widget，让 AI 知道能干什么 */
+  private buildHostInfo(): HostInfo {
+    return {
+      pageTitle: typeof document !== 'undefined' ? document.title : '',
+      pageUrl: typeof location !== 'undefined' ? location.href : '',
+      actions: Object.keys(this.actions),
+      fields: scanHostFields(this.opts.context?.selectorsBlacklist),
+    };
+  }
+
+  private pushHostInfo() {
+    if (!this.bridge) return;
+    try {
+      this.bridge.send({ type: 'HOST_INFO', info: this.buildHostInfo() });
+    } catch (e) {
+      this.log('warn', 'pushHostInfo failed', e);
+    }
+  }
+
   private async handleWidgetMessage(msg: BridgeFromWidget) {
     switch (msg.type) {
       case 'READY':
         this.log('info', 'widget ready');
         this.resolveReady?.();
+        // widget 一就绪就把宿主能力和可填字段告诉它，AI 才知道怎么操作宿主
+        this.pushHostInfo();
         break;
       case 'STATE':
         this.isOpen = msg.open;

@@ -47,14 +47,22 @@
         context: { captureClicks: true, captureSelection: true },
         actions: {
           fillForm: ({ field, value }) => {
-            const el = document.querySelector(`[name="${field}"], #${field}`);
-            if (el) el.value = value;
-            return { ok: !!el };
+            let el = document.querySelector(`[name="${CSS.escape(field)}"]`);
+            if (!el) el = document.getElementById(field);
+            if (!el) return { ok: false, reason: 'field not found: ' + field };
+            el.focus();
+            if (el.tagName === 'SELECT') el.value = value;
+            else if (el.type === 'checkbox' || el.type === 'radio') el.checked = !!value;
+            else el.value = value;
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            el.blur();
+            return { ok: true, value: el.value };
           },
           clickButton: ({ selector }) => {
             const el = document.querySelector(selector);
             el?.click();
-            return { clicked: !!el };
+            return { ok: !!el };
           },
         },
       });
