@@ -1,0 +1,37 @@
+{
+  "name": "@arkclaw/widget",
+  "version": "0.1.0",
+  "description": "ArkClaw 嵌入式对话 Widget — 可集成到任意 SaaS 工具",
+  "type": "module",
+  "main": "./dist/arkclaw-widget.umd.js",
+  "module": "./dist/arkclaw-widget.es.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/arkclaw-widget.es.js",
+      "require": "./dist/arkclaw-widget.umd.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --port 4173",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^4.5.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "typescript": "^5.4.0",
+    "vite": "^5.4.0"
+  },
+  "keywords": ["arkclaw", "ai", "chat", "widget", "saas", "copilot"],
+  "license": "MIT"
+}

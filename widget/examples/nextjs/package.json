@@ -1,0 +1,21 @@
+{
+  "name": "arkclaw-widget-nextjs-example",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 5175",
+    "build": "next build",
+    "start": "next start -p 5175"
+  },
+  "dependencies": {
+    "@arkclaw/widget": "file:../..",
+    "next": "^14.2.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "typescript": "^5.4.0"
+  }
+}

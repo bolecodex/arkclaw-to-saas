@@ -1,4 +1,4 @@
-# Dependencies & environments
+# ── Python ──
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -6,20 +6,31 @@ venv/
 .venv/
 env/
 
-# IDE
+# ── Node / Vite ──
+node_modules/
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+*.log
+
+# ── IDE ──
 .idea/
 .vscode/
 *.swp
 *.swo
 .DS_Store
 
-# Secrets
+# ── Secrets ──
 .env
+.env.local
+.env.*.local
 *.key
 
-# Internal docs (not for public repo)
+# ── Internal docs ──
 docs/
 
-# Cursor
+# ── Cursor ──
 .cursor/
 assets/

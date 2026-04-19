@@ -1,0 +1,7 @@
+node_modules
+dist
+examples/*/node_modules
+examples/*/dist
+examples/*/.next
+.env
+*.log

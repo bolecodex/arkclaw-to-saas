@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>ArkClaw Widget · 原生 HTML 接入</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        margin: 0; min-height: 100vh; padding: 60px 20px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: linear-gradient(180deg, #f8fafc, #eef2ff);
+        color: #1f2937;
+      }
+      .container {
+        max-width: 760px; margin: 0 auto; background: white;
+        padding: 40px; border-radius: 20px; box-shadow: 0 20px 60px rgba(15,23,42,.08);
+      }
+      h1 { margin-top: 0; }
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 24px; }
+      .field { display: flex; flex-direction: column; gap: 6px; }
+      .field label { font-size: 12px; color: #6b7280; }
+      .field input, .field select, .field textarea {
+        padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 10px; font-size: 14px;
+        font-family: inherit;
+      }
+      .actions { display: flex; gap: 12px; margin-top: 24px; }
+      button {
+        padding: 10px 18px; border: 0; border-radius: 10px; font-size: 14px;
+        cursor: pointer;
+      }
+      .primary { background: #6366f1; color: white; }
+      .ghost { background: transparent; color: #6366f1; border: 1px solid #c7d2fe; }
+      [data-testid="invoice-row"] {
+        padding: 12px; border: 1px solid #e5e7eb; border-radius: 10px; margin-top: 12px;
+        display: flex; justify-content: space-between;
+      }
+      .badge {
+        display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px;
+        background: #fef3c7; color: #92400e;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>📄 报销单 · 演示页面</h1>
+      <p>这是一个虚构的 SaaS 工具页面。把 ArkClaw widget 嵌进来，点击表单元素或划词，就会自动作为上下文推送给 AI。</p>
+
+      <div class="grid">
+        <div class="field">
+          <label for="title">报销标题</label>
+          <input id="title" name="title" placeholder="如：4 月差旅" />
+        </div>
+        <div class="field">
+          <label for="amount">金额（元）</label>
+          <input id="amount" name="amount" type="number" placeholder="0.00" />
+        </div>
+        <div class="field">
+          <label for="category">类别</label>
+          <select id="category" name="category">
+            <option value="">请选择</option>
+            <option value="travel">差旅</option>
+            <option value="meal">餐费</option>
+            <option value="other">其他</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="memo">备注</label>
+          <textarea id="memo" name="memo" rows="2"></textarea>
+        </div>
+      </div>
+
+      <div data-testid="invoice-row" id="invoice-1">
+        <span>Invoice #00123</span>
+        <span class="badge">待审批</span>
+      </div>
+
+      <div class="actions">
+        <button class="primary" id="submit-btn">提交</button>
+        <button class="ghost" id="ai-fill" data-testid="ai-fill-btn">让 AI 帮我填</button>
+      </div>
+
+      <p style="margin-top: 32px; color:#6b7280; font-size:13px;">
+        提示：试着划词、点击输入框，或者点 "让 AI 帮我填"。
+      </p>
+    </div>
+
+    <!-- ArkClaw Widget UMD bundle - 带时间戳防缓存（开发期）-->
+    <script>
+      var __s = document.createElement('script');
+      __s.src = '../../dist/arkclaw-widget.umd.js?v=' + Date.now();
+      __s.onload = function(){ window.dispatchEvent(new Event('arkclaw-loaded')); };
+      document.head.appendChild(__s);
+    </script>
+    <script>window.addEventListener('arkclaw-loaded', function(){ initArkclaw(); });</script>
+    <script>
+    function initArkclaw() {
+      const claw = new window.Arkclaw.Arkclaw({
+        endpoint: 'http://127.0.0.1:8000',
+        auth: { type: 'lark' },
+        ui: {
+          mode: 'side-drawer',
+          width: 420,
+          theme: 'auto',
+          title: '报销助手',
+          greeting: '我是报销助手，可以帮你填表、查看状态、解释字段。',
+          quickActions: [
+            { label: '总结本页', prompt: '请总结当前页面的关键信息' },
+            { label: '检查表单', prompt: '请帮我检查表单字段是否都已填写' },
+          ],
+        },
+        context: {
+          captureClicks: true,
+          captureSelection: true,
+          selectorsBlacklist: ['[data-arkclaw-widget]'],
+        },
+        actions: {
+          fillForm: ({ field, value }) => {
+            const el = document.querySelector(`[name="${field}"]`);
+            if (!el) return { ok: false, reason: 'field not found' };
+            el.value = value;
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            return { ok: true };
+          },
+          clickButton: ({ selector }) => {
+            const el = document.querySelector(selector);
+            el?.click();
+            return { ok: !!el };
+          },
+          highlight: ({ selector }) => {
+            // 也可以让 AI 显式触发高亮（默认 SDK 也会自动处理 HIGHLIGHT 消息）
+            window.Arkclaw.highlightSelector(selector);
+            return { ok: true };
+          },
+        },
+      });
+
+      claw.on('action', (a) => console.info('[host] AI action:', a));
+      claw.mount();
+
+      // 点 "让 AI 帮我填" 主动触发对话
+      document.getElementById('ai-fill').addEventListener('click', () => {
+        claw.send('请按差旅类别帮我把这个报销单字段填好（标题/金额/类别/备注）');
+      });
+
+      // 飞书回调签发的 session 拾取（兼容整页跳转模式）
+      const params = new URLSearchParams(location.search);
+      const sess = params.get('arkclaw_session');
+      if (sess) {
+        sessionStorage.setItem('arkclaw_session', sess);
+        history.replaceState(null, '', location.pathname);
+      }
+      // 调试便利：URL 带 ?open 时自动展开面板
+      if (params.has('open')) setTimeout(() => claw.open(), 100);
+    }
+    </script>
+  </body>
+</html>

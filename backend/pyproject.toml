@@ -1,0 +1,21 @@
+[project]
+name = "arkclaw-saas-backend"
+version = "0.1.0"
+description = "ArkClaw SaaS integration backend (FastAPI)"
+requires-python = ">=3.9"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "requests>=2.28",
+    "python-jose[cryptography]>=3.3",
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+dev = ["ruff>=0.3", "pytest>=8.0"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"

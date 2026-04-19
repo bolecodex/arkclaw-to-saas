@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ArkClaw Widget — Dev</title>
+    <style>
+      body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f7f7fb; }
+      .demo {
+        max-width: 720px; margin: 60px auto; background: #fff; padding: 32px;
+        border-radius: 16px; box-shadow: 0 8px 30px rgba(0,0,0,.06);
+      }
+      h1 { margin-top: 0; }
+      .row { display: flex; gap: 12px; margin-top: 12px; }
+      input, button { padding: 10px 14px; font-size: 14px; }
+      input { flex: 1; border: 1px solid #ddd; border-radius: 8px; }
+      button { background: #6366f1; color: white; border: 0; border-radius: 8px; cursor: pointer; }
+    </style>
+  </head>
+  <body>
+    <div class="demo">
+      <h1>ArkClaw Widget Dev 环境</h1>
+      <p>修改 <code>widget/src</code> 即可热更新。底部右下角应有 widget 入口。</p>
+      <div class="row">
+        <input id="name" placeholder="请输入姓名" />
+        <button id="export-btn">导出</button>
+      </div>
+      <p data-testid="quote">「这段文字可以划词触发 SelectionToolbar」</p>
+    </div>
+
+    <script type="module">
+      import api from '/src/sdk/index.ts';
+
+      const claw = new api.Arkclaw({
+        endpoint: location.protocol + '//' + (location.hostname || '127.0.0.1') + ':8000',
+        auth: { type: 'lark' },
+        ui: {
+          mode: 'side-drawer',
+          width: 420,
+          theme: 'auto',
+          defaultOpen: true,
+          quickActions: [
+            { label: '总结本页', prompt: '请总结当前页面' },
+            { label: '帮我导出', prompt: '请触发导出按钮并告诉我结果' },
+          ],
+        },
+        context: { captureClicks: true, captureSelection: true },
+        actions: {
+          fillForm: ({ field, value }) => {
+            const el = document.querySelector(`[name="${field}"], #${field}`);
+            if (el) el.value = value;
+            return { ok: !!el };
+          },
+          clickButton: ({ selector }) => {
+            const el = document.querySelector(selector);
+            el?.click();
+            return { clicked: !!el };
+          },
+        },
+      });
+      window.__claw__ = claw;
+      claw.mount();
+
+      claw.on('action', (a) => console.log('AI requested action:', a));
+      claw.on('message', (m) => console.log('msg:', m));
+
+      // 演示从 URL 中拾取 lark 回调签发的 session
+      const params = new URLSearchParams(location.search);
+      const sess = params.get('arkclaw_session');
+      if (sess) {
+        sessionStorage.setItem('arkclaw_session', sess);
+        history.replaceState(null, '', location.pathname);
+      }
+    </script>
+  </body>
+</html>
