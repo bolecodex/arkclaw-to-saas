@@ -73,6 +73,8 @@ export function ChatPanel({ config }: ChatPanelProps) {
         const err = e as ApiError;
         if (alive) {
           if (err.message.startsWith('NEED_LARK_LOGIN')) {
+            // session 缺失或过期：让宿主也清掉持久化，避免下次刷新还把旧 session 注入回来
+            bridge.send({ type: 'SESSION_UPDATE', sessionToken: '' });
             setBootError(null);
             setNeedLogin(true);
             bridge.send({ type: 'NEED_AUTH', reason: 'lark login required' });
@@ -89,28 +91,35 @@ export function ChatPanel({ config }: ChatPanelProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedInstanceId, bootSeq]);
 
+  // 应用新 session：写 ApiClient 内存 + iframe 自身 localStorage（inline 模式）
+  // + 通过 bridge 通知宿主写宿主 localStorage（iframe 模式 srcdoc origin 隔离需要）
+  const applyNewSession = useCallback((token: string) => {
+    apiRef.current?.setSessionToken(token);
+    bridge.send({ type: 'SESSION_UPDATE', sessionToken: token });
+  }, [bridge]);
+
   // 监听 OAuth 弹窗回调（postMessage）
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
       const data = e.data;
       if (!data || typeof data !== 'object') return;
       if (data.type === 'arkclaw:lark-success' && typeof data.session_token === 'string') {
-        apiRef.current?.setSessionToken(data.session_token);
+        applyNewSession(data.session_token);
         setNeedLogin(false);
         setBootSeq((n) => n + 1);
       }
     };
     window.addEventListener('message', onMsg);
     return () => window.removeEventListener('message', onMsg);
-  }, []);
+  }, [applyNewSession]);
 
   const handleLoginSuccess = useCallback((token: string, name?: string) => {
-    apiRef.current?.setSessionToken(token);
+    applyNewSession(token);
     setNeedLogin(false);
     setBootSeq((n) => n + 1);
     if (name) addSystemMessage(`已登录：${name}`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [applyNewSession]);
 
   const handlePickInstance = useCallback((info: InstanceInfo) => {
     if (info.instance_id === activeInstanceId) return;

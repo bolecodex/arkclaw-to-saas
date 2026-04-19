@@ -33,6 +33,23 @@ export class ApiError extends Error {
   }
 }
 
+// session token 持久化 key —— 跟 endpoint 绑定，同一浏览器对接多个后端互不污染
+const SESSION_LS_PREFIX = 'arkclaw:session-token:';
+
+function readPersistedSession(endpoint: string): string {
+  try {
+    return localStorage.getItem(SESSION_LS_PREFIX + endpoint) || '';
+  } catch {
+    return '';
+  }
+}
+function writePersistedSession(endpoint: string, token: string) {
+  try {
+    if (token) localStorage.setItem(SESSION_LS_PREFIX + endpoint, token);
+    else localStorage.removeItem(SESSION_LS_PREFIX + endpoint);
+  } catch { /* localStorage 可能被禁用，忽略 */ }
+}
+
 export class ApiClient {
   private endpoint: string;
   private auth: AuthMode;
@@ -45,11 +62,21 @@ export class ApiClient {
       this.sessionToken = opts.auth.token;
     } else if (opts.auth.type === 'lark' && opts.auth.sessionToken) {
       this.sessionToken = opts.auth.sessionToken;
+    } else if (opts.auth.type === 'lark') {
+      // lark 模式下没有显式传 sessionToken：尝试从 localStorage 恢复，避免每次刷新都重登
+      this.sessionToken = readPersistedSession(this.endpoint);
     }
   }
 
   setSessionToken(token: string) {
     this.sessionToken = token;
+    if (this.auth.type === 'lark') writePersistedSession(this.endpoint, token);
+  }
+
+  /** 清掉本地 session（401、用户主动登出等场景调） */
+  clearSession() {
+    this.sessionToken = '';
+    if (this.auth.type === 'lark') writePersistedSession(this.endpoint, '');
   }
 
   private headers(): HeadersInit {
@@ -75,6 +102,11 @@ export class ApiClient {
       const msg = typeof detail === 'object' && detail && 'detail' in (detail as Record<string, unknown>)
         ? String((detail as Record<string, unknown>).detail)
         : `HTTP ${res.status}`;
+      // session 过期或无效：lark 模式下清掉本地 token 让上层去重新走 OAuth
+      if (res.status === 401 && this.auth.type === 'lark') {
+        this.clearSession();
+        throw new ApiError(401, 'NEED_LARK_LOGIN: session expired or missing', detail);
+      }
       throw new ApiError(res.status, msg, detail);
     }
     return res.json() as Promise<T>;

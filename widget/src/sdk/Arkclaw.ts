@@ -245,9 +245,16 @@ export class Arkclaw {
   private buildIframeHtml(): string {
     // 把当前 SDK 脚本通过 location.href 推断出 widget bundle 的位置
     const script = (window as any).__ARKCLAW_BUNDLE_URL__ || autoDetectBundleUrl();
+    // 关键：把宿主 localStorage 中保存的 session 注入到 iframe config，
+    // 避免 srcdoc iframe origin 隔离导致 session 跨刷新丢失
+    const auth = this.opts.auth;
+    const persistedSession = readPersistedSession(this.opts.endpoint);
+    const finalAuth = (auth.type === 'lark' && !auth.sessionToken && persistedSession)
+      ? { ...auth, sessionToken: persistedSession }
+      : auth;
     const cfg = JSON.stringify({
       endpoint: this.opts.endpoint,
-      auth: this.opts.auth,
+      auth: finalAuth,
       instanceId: this.opts.instanceId,
       ui: this.ui,
       embedded: true,
@@ -304,6 +311,10 @@ export class Arkclaw {
         this.log('warn', 'widget requested auth: ' + msg.reason);
         this.emit('error', { message: 'NEED_AUTH: ' + msg.reason });
         break;
+      case 'SESSION_UPDATE':
+        writePersistedSession(this.opts.endpoint, msg.sessionToken);
+        this.log('info', msg.sessionToken ? 'session 已保存到宿主' : 'session 已从宿主清除');
+        break;
     }
   }
 
@@ -331,4 +342,18 @@ function autoDetectBundleUrl(): string {
   const scripts = Array.from(document.querySelectorAll('script[src]')) as HTMLScriptElement[];
   const found = scripts.find((s) => /arkclaw-widget(\.umd|\.es)?\.js/.test(s.src));
   return found?.src || '/dist/arkclaw-widget.umd.js';
+}
+
+/* ── session 持久化（与 ApiClient 保持一致的 key） ── */
+const SESSION_LS_PREFIX = 'arkclaw:session-token:';
+function readPersistedSession(endpoint: string): string {
+  try { return localStorage.getItem(SESSION_LS_PREFIX + endpoint.replace(/\/$/, '')) || ''; }
+  catch { return ''; }
+}
+function writePersistedSession(endpoint: string, token: string) {
+  try {
+    const key = SESSION_LS_PREFIX + endpoint.replace(/\/$/, '');
+    if (token) localStorage.setItem(key, token);
+    else localStorage.removeItem(key);
+  } catch { /* noop */ }
 }

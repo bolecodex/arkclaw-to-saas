@@ -84,7 +84,10 @@ export type BridgeFromWidget =
   | { type: 'MESSAGE'; role: 'user' | 'assistant' | 'system'; text: string }
   | { type: 'AI_ACTION'; callId: string; action: string; args: Record<string, unknown> }
   | { type: 'HIGHLIGHT'; selector: string; durationMs?: number }
-  | { type: 'NEED_AUTH'; reason: string };
+  | { type: 'NEED_AUTH'; reason: string }
+  /** session 持久化：iframe 内拿到/清掉 session 后通知父窗口写 localStorage，
+   * 因为 srcdoc iframe 的 origin 隔离，自身 localStorage 与宿主不共享 */
+  | { type: 'SESSION_UPDATE'; sessionToken: string };
 
 export type ConnectionStatus = 'idle' | 'connecting' | 'open' | 'closed' | 'error';
 
