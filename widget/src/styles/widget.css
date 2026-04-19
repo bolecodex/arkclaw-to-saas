@@ -90,6 +90,23 @@
 }
 .ac-header__close:hover { background: rgba(255,255,255,.12); opacity: 1; }
 
+.ac-header__reconnect {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease;
+}
+.ac-header__reconnect:hover {
+  background: rgba(255, 255, 255, 0.32);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+.ac-header__reconnect:active { transform: translateY(1px); }
+
 .ac-quick {
   display: flex; gap: 8px; padding: 10px 16px;
   flex-wrap: wrap; border-bottom: 1px solid var(--ac-color-border);

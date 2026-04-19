@@ -16,6 +16,14 @@ export interface UseWebSocketOpts {
   onLog?: (level: 'info' | 'warn' | 'error', msg: string, data?: unknown) => void;
   onAiAction?: (callId: string, action: string, args: Record<string, unknown>) => void;
   onAssistantText?: (text: string) => void;
+  /**
+   * 上层（ChatPanel）听到这个回调时，应该重新去后端 fetchChatToken 拿新的 wsUrl。
+   * 触发场景：
+   *  - 应用级 close（4xxx，多半是 chatToken 失效或参数错）
+   *  - 握手都没完成就被 close（旧 url 已彻底失效）
+   *  - 普通 1006/1011 等多次重连仍失败，超过自动重连上限
+   */
+  onNeedRefreshUrl?: (reason: string) => void;
 }
 
 interface SendOptions {
@@ -317,28 +325,43 @@ export function useWebSocket(opts: UseWebSocketOpts) {
       setStatus('closed');
       const reason = ev.reason || closeCodeHint(ev.code);
       log('warn', `WebSocket 关闭 code=${ev.code}`, ev.reason);
-      // 把 close 信息展示到面板上，方便不开 DevTools 的用户看
       addMessage({
         id: uuid(),
         role: 'system',
         text: `WebSocket 已断开 · code=${ev.code}${reason ? ' · ' + reason : ''}`,
         ts: Date.now(),
       });
-      // 4xxx 是应用级错误（认证/参数等），不该自动重连，避免刷屏
+
+      // 4xxx 是应用级错误（认证/参数等）—— 旧 chatToken 已失效，让上层去后端拿新的
       const appLevelClose = ev.code >= 4000 && ev.code < 5000;
-      if (
-        reconnectAttemptsRef.current < 5 &&
-        ev.code !== 1000 &&
-        !appLevelClose &&
-        handshakeDoneRef.current // 只有曾经握手成功过才重连，避免无限失败循环
-      ) {
+      if (appLevelClose) {
+        log('warn', `应用级 close ${ev.code}，请求刷新 chatToken`);
+        opts.onNeedRefreshUrl?.(`close-${ev.code}`);
+        return;
+      }
+
+      // 握手都没完成就 close —— 多半是 wsUrl 本身失效（chatToken 过期、endpoint 变更等）
+      // 旧逻辑直接卡死，这里改成主动让上层刷新
+      if (!handshakeDoneRef.current) {
+        log('warn', 'pre-handshake close，请求刷新 chatToken');
+        opts.onNeedRefreshUrl?.('pre-handshake-close');
+        return;
+      }
+
+      if (ev.code === 1000) return;
+
+      if (reconnectAttemptsRef.current < 5) {
         const delay = Math.min(1000 * 2 ** reconnectAttemptsRef.current, 15000);
         reconnectAttemptsRef.current += 1;
         log('info', `${delay}ms 后重连 (${reconnectAttemptsRef.current}/5)`);
         setTimeout(connect, delay);
+      } else {
+        // 自动重连上限用完仍然不行，旧 wsUrl 八成已经过期，让上层刷新
+        log('warn', '重连上限用尽，请求刷新 chatToken');
+        opts.onNeedRefreshUrl?.('reconnect-exhausted');
       }
     };
-  }, [opts.wsUrl, opts.userToken, setStatus, log, handleEvent]);
+  }, [opts.wsUrl, opts.userToken, opts.onNeedRefreshUrl, setStatus, log, handleEvent]);
 
   const send = useCallback((text: string, options: SendOptions = {}) => {
     const ws = wsRef.current;

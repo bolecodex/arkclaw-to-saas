@@ -50,6 +50,8 @@ export function ChatPanel({ config }: ChatPanelProps) {
   if (!apiRef.current) {
     apiRef.current = new ApiClient({ endpoint: config.endpoint, auth: config.auth });
   }
+  // 节流刷新 chatToken：避免 ws 抖动反复 fetch（默认 5s 内最多一次）
+  const lastRefreshAtRef = useRef(0);
 
   const bridge = useHostBridge({
     onHost: (msg) => handleHostMessage(msg),
@@ -124,6 +126,27 @@ export function ChatPanel({ config }: ChatPanelProps) {
     return apiRef.current!.listInstances();
   }, []);
 
+  // 手动重连：用户在 header 上点"重连"，强制重新拿 chatToken
+  const handleManualReconnect = useCallback(() => {
+    lastRefreshAtRef.current = Date.now();
+    addSystemMessage('正在重新连接…');
+    setWsUrl(null);
+    setBootSeq((n) => n + 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ws 失活兜底：旧 chatToken 已失效，重新去后端签一次再连。
+  // 5s 内只触发一次，避免 ws 抖动导致 fetch 风暴。
+  const handleNeedRefreshUrl = useCallback((reason: string) => {
+    const now = Date.now();
+    if (now - lastRefreshAtRef.current < 5000) return;
+    lastRefreshAtRef.current = now;
+    addSystemMessage(`链路异常（${reason}），尝试重新签发 chatToken…`);
+    setWsUrl(null);
+    setBootSeq((n) => n + 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const ws = useWebSocket({
     wsUrl,
     onLog: (level, msg, data) => {
@@ -137,6 +160,7 @@ export function ChatPanel({ config }: ChatPanelProps) {
     onAssistantText: (text) => {
       bridge.send({ type: 'MESSAGE', role: 'assistant', text });
     },
+    onNeedRefreshUrl: handleNeedRefreshUrl,
   });
 
   // 通知 host bridge 已就绪 + 状态变化
@@ -226,6 +250,16 @@ export function ChatPanel({ config }: ChatPanelProps) {
             {statusText(status)}
           </div>
         </div>
+        {!needLogin && (status === 'closed' || status === 'error') && (
+          <button
+            type="button"
+            className="ac-header__reconnect"
+            onClick={handleManualReconnect}
+            title="重新签发 chatToken 并连接"
+          >
+            重连
+          </button>
+        )}
         {!needLogin && (
           <InstancePicker
             currentId={activeInstanceId}
@@ -263,7 +297,7 @@ export function ChatPanel({ config }: ChatPanelProps) {
 
       <SelectionToolbar onAsk={sendUser} />
     </div>
-  ), [ui, status, config.embedded, bridge, onQuickAction, bootError, sendUser, wsUrl, needLogin, handleLoginSuccess, config.endpoint, activeInstanceId, loadInstances, handlePickInstance]);
+  ), [ui, status, config.embedded, bridge, onQuickAction, bootError, sendUser, wsUrl, needLogin, handleLoginSuccess, config.endpoint, activeInstanceId, loadInstances, handlePickInstance, handleManualReconnect]);
 
   return themedRoot;
 }
