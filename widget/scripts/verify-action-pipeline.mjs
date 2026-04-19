@@ -22,11 +22,11 @@ const hostPrompt = await import(resolve(__dirname, '../src/utils/hostPrompt.ts')
     .replace(/: \w+(\[\])?(\s*\|\s*\w+(\[\])?)*/g, '')
     .replace(/\bexport\s+/g, '')
     .replace(/interface\s+\w+\s*\{[\s\S]*?\}\s*/g, '');
-  const m = new Function(stripped + '\nreturn { buildHostCapabilityPrompt };');
+  const m = new Function(stripped + '\nreturn { buildHostCapabilityPrompt, buildHostShortReminder };');
   return m();
 });
 
-const { buildHostCapabilityPrompt } = hostPrompt;
+const { buildHostCapabilityPrompt, buildHostShortReminder } = hostPrompt;
 
 const sampleHost = {
   pageTitle: '报销单 · 演示页面',
@@ -45,6 +45,25 @@ const sampleHost = {
 
 console.log('\n=== buildHostCapabilityPrompt 输出 ===\n');
 console.log(buildHostCapabilityPrompt(sampleHost));
+
+console.log('\n=== buildHostShortReminder 输出（用户后续每条消息附带）===\n');
+console.log(buildHostShortReminder(sampleHost));
+
+// 关键断言：强约束身份关键词必须出现，不能让 AI 跑去搜索
+const cap = buildHostCapabilityPrompt(sampleHost);
+const required = ['嵌入', '严禁', 'fillForm', '<arkclaw:action', '差旅', 'travel', '不要去打开', '不要再去打开'];
+const missing = required.filter((kw) => {
+  // "不要再去打开" 跟 "不要去打开" 任一出现即可
+  if (kw === '不要去打开' || kw === '不要再去打开') {
+    return !cap.includes('不要去打开') && !cap.includes('不要再去打开') && !cap.includes('严禁调用');
+  }
+  return !cap.includes(kw);
+});
+if (missing.length) {
+  console.log('\n❌ 强约束 prompt 缺少关键词: ' + missing.join(', '));
+} else {
+  console.log('\n✔ 强约束 prompt 关键词齐全');
+}
 
 // ---- tryParseActions：把 useWebSocket.ts 里的解析函数搬过来跑 ----
 const ACTION_TAG_RE = /<arkclaw:action\s+name=["']([^"']+)["']\s*>([\s\S]*?)<\/arkclaw:action>/g;

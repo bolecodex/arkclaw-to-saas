@@ -8,7 +8,7 @@ import { useWebSocket } from '@/hooks/useWebSocket';
 import { useHostBridge } from '@/hooks/useHostBridge';
 import { useChatStore, uuid, type Message } from '@/store/chatStore';
 import type { ArkclawOptions, BridgeFromHost, HostInfo, QuickAction } from '@/sdk/types';
-import { buildHostCapabilityPrompt } from '@/utils/hostPrompt';
+import { buildHostCapabilityPrompt, buildHostShortReminder } from '@/utils/hostPrompt';
 import { MessageList } from './MessageList';
 import { InputBar } from './InputBar';
 import { QuickActions } from './QuickActions';
@@ -209,11 +209,17 @@ export function ChatPanel({ config }: ChatPanelProps) {
 
       const contextParts: string[] = [];
 
-      // 第一次说话时把宿主能力清单注入：让 AI 知道有哪些字段、哪些 action、调用格式
-      if (!hostInfoSentRef.current && hostInfo) {
-        const cap = buildHostCapabilityPrompt(hostInfo);
-        if (cap) contextParts.push(cap);
-        hostInfoSentRef.current = true;
+      if (hostInfo) {
+        if (!hostInfoSentRef.current) {
+          // 第一条：完整能力清单 + 强约束身份定位
+          const cap = buildHostCapabilityPrompt(hostInfo);
+          if (cap) contextParts.push(cap);
+          hostInfoSentRef.current = true;
+        } else {
+          // 后续每条：精简提醒，避免 AI 中途忘了身份去搜索
+          const tip = buildHostShortReminder(hostInfo);
+          if (tip) contextParts.push(tip);
+        }
       }
 
       if (pendingContext) {
